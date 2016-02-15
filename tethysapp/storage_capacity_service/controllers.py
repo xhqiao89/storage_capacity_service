@@ -4,7 +4,7 @@ import os
 import sys
 import csv
 from datetime import datetime
-
+import binascii
 
 @login_required()
 def home(request):
@@ -54,18 +54,25 @@ def home(request):
 
 
 def SC(x, y, damh, interval):
+    dem = 'BearCk'
+    gisdb = "/home/drew/grass_folder"
+    location = "newLocation"
+    mapset = "drew"
+
+    temp_files_list = []
     try:
-        dem = 'BearCk'
+        string_length = 4
+        jobid = binascii.hexlify(os.urandom(string_length))
+
         outlet = (float(x), float(y))
         dam_h = float(damh)
         elev_interval = float(interval)
 
-        f = open('script_log.log', 'w', 0)
+        log_name = 'log_{0}.log'.format(jobid)
+        f = open(log_name, 'w', 0)
 
         gisbase = "/usr/lib/grass70"
-        gisdb = "/home/drew/grass_folder"
-        location = "newLocation"
-        mapset = "drew"
+
 
         # Set GISBASE environment variable
         os.environ['GISBASE'] = gisbase
@@ -116,16 +123,26 @@ def SC(x, y, damh, interval):
         f.write("\n ---------- Flow accumulation analysis ------------- \n")
         f.write(str(datetime.now()))
         # stats = gscript.read_command('r.watershed', elevation=dem, threshold='10000', accumulation='accum_10K', drainage='draindir_10K', basin='basin_10K', flags='s', overwrite=True)
-        stats = gscript.read_command('r.watershed', elevation=dem, threshold='10000', drainage='draindir_10K', flags='s', overwrite=True)
+        drainage = "drain_10k_{0}".format(jobid)
+        temp_files_list.append(drainage)
+        stats = gscript.read_command('r.watershed', elevation=dem, threshold='10000', drainage=drainage, flags='s', overwrite=True)
 
 
         # Delineate watershed
         f.write("\n ---------- Delineate watershed ------------- \n")
-        stats = gscript.read_command('r.water.outlet', input='draindir_10K', output='basin_1', coordinates=outlet, overwrite=True)
+        basin = "basin_{0}".format(jobid)
+        temp_files_list.append(basin)
+        stats = gscript.read_command('r.water.outlet', input=drainage, output=basin, coordinates=outlet, overwrite=True)
 
         # Set computation boundary
-        f.write("\n ---------- Set computation boundary ------------- \n")
-        stats = gscript.read_command('r.mask', raster='basin_1', overwrite=True)
+        # f.write("\n ---------- Set computation boundary ------------- \n")
+        # stats = gscript.read_command('r.mask', raster=basin, overwrite=True)
+
+        f.write("\n ---------- Cut dem ------------- \n")
+        dem_cropped = "{0}_cropped_{1}".format(dem, jobid)
+        mapcalc_cmd = '{0} = if({1}, {2})'.format(dem_cropped, basin, dem)
+        temp_files_list.append(dem_cropped)
+        gscript.mapcalc(mapcalc_cmd, overwrite=True, quiet=True)
 
         # Read outlet elevation
         f.write("\n ---------- Read outlet elevation ------------- \n")
@@ -151,13 +168,14 @@ def SC(x, y, damh, interval):
             f.write(str(elev))
             f.write(", ")
             #Resevior volume calculation
-            lake_rast = 'lake_' + str(elev)
+            lake_rast = 'lake_{0}_{1}'.format(jobid, str(elev))
+            temp_files_list.append(lake_rast)
             f.write("\n111 --- No.{}\n".format(count))
             f.write(str(datetime.now()))
-            gscript.read_command('r.lake', elevation=dem, coordinates=outlet, waterlevel=elev, lake=lake_rast, overwrite=True)
+            gscript.read_command('r.lake', elevation=dem_cropped, coordinates=outlet, waterlevel=elev, lake=lake_rast, overwrite=True)
             f.write("\n222 --- No.{}\n".format(count))
             f.write(str(datetime.now()))
-            stats = gscript.read_command('r.volume', input=lake_rast)
+            stats = gscript.read_command('r.volume', input=lake_rast, clump=lake_rast)
             f.write("\n333 --- No.{}\n".format(count))
             f.write(str(datetime.now()))
             f.write(stats)
@@ -182,3 +200,8 @@ def SC(x, y, damh, interval):
             f.write(e.message)
             f.close()
         return None
+    finally:
+        for f in temp_files_list:
+            f_fullpath = "{0}/{1}/{2}/cell/{3}".format(gisdb, location, mapset, f)
+            if os.path.exists(f_fullpath):
+                os.remove(f_fullpath)
