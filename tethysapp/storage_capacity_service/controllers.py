@@ -60,7 +60,6 @@ def SC(x, y, damh, interval):
         dam_h = float(damh)
         elev_interval = float(interval)
 
-
         f = open('script_log.log', 'w', 0)
 
         gisbase = "/usr/lib/grass70"
@@ -116,7 +115,9 @@ def SC(x, y, damh, interval):
 
         f.write("\n ---------- Flow accumulation analysis ------------- \n")
         f.write(str(datetime.now()))
-        stats = gscript.read_command('r.watershed', elevation=dem, threshold='10000', accumulation='accum_10K', drainage='draindir_10K', basin='basin_10K', flags='s', overwrite=True)
+        # stats = gscript.read_command('r.watershed', elevation=dem, threshold='10000', accumulation='accum_10K', drainage='draindir_10K', basin='basin_10K', flags='s', overwrite=True)
+        stats = gscript.read_command('r.watershed', elevation=dem, threshold='10000', drainage='draindir_10K', flags='s', overwrite=True)
+
 
         # Delineate watershed
         f.write("\n ---------- Delineate watershed ------------- \n")
