@@ -4,6 +4,10 @@ import os
 import sys
 import csv
 from datetime import datetime
+import subprocess
+import shutil
+import binascii
+import tempfile
 
 
 @login_required()
@@ -11,7 +15,7 @@ def home(request):
     """
     Controller for the app home page.
     """
-    #http://127.0.0.1:8000/apps/sc-service/?x=1696907&y=7339134.4&damh=200.0&interval=15.0
+    #http://127.0.0.1:8000/apps/storage-capacity-service/?x=1696907&y=7339134.4&damh=200.0&interval=15.0
     output_csv = "sc.csv"
 
     time_start = datetime.now()
@@ -55,17 +59,58 @@ def home(request):
 
 def SC(x, y, damh, interval):
     try:
+
+        dem_full_path = "/home/drew/Downloads/BearCk.tif"
         dem = 'BearCk'
+        grass7bin = "grass70"
+
+        # override for now with TEMP dir
+        gisdb = os.path.join(tempfile.gettempdir(), 'grassdata')
+        try:
+            os.stat(gisdb)
+        except:
+            os.mkdir(gisdb)
+
+        # location/mapset: use random names for batch jobs
+        string_length = 8
+        jobid = binascii.hexlify(os.urandom(string_length))
+        # location = jobid
+        location = "sc_location"
+        mapset = 'PERMANENT'
+        location_path = os.path.join(gisdb, location)
+
+        # Create new location (we assume that grass7bin is in the PATH)
+        # #  from EPSG code:
+        # startcmd = grass7bin + ' -c epsg:' + myepsg + ' -e ' + location_path
+        #  from SHAPE or GeoTIFF file
+
+        if not os.path.exists(location_path):
+            startcmd = grass7bin + ' -c ' + dem_full_path + ' -e ' + location_path
+
+            print startcmd
+            p = subprocess.Popen(startcmd, shell=True,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            out, err = p.communicate()
+            if p.returncode != 0:
+                print >>sys.stderr, 'ERROR: %s' % err
+                print >>sys.stderr, 'ERROR: Cannot generate location (%s)' % startcmd
+                sys.exit(-1)
+            else:
+                print 'Created location %s' % location_path
+
+
+
         outlet = (float(x), float(y))
         dam_h = float(damh)
         elev_interval = float(interval)
 
-        f = open('script_log.log', 'w', 0)
+        log_file = 'script_log_{0}.log'.format(jobid)
+        f = open(log_file, 'w', 0)
 
         gisbase = "/usr/lib/grass70"
-        gisdb = "/home/drew/grass_folder"
-        location = "newLocation"
-        mapset = "drew"
+        #gisdb = "/home/drew/grass_folder"
+        #location = "newLocation"
+        #mapset = "drew"
 
         # Set GISBASE environment variable
         os.environ['GISBASE'] = gisbase
@@ -95,6 +140,14 @@ def SC(x, y, damh, interval):
         gsetup.init(gisbase, gisdb, location, mapset)
         f.write(str(gscript.gisenv()))
 
+        f.write("\n ---------- Create MapSet ------------- \n")
+        stats = gscript.read_command('g.mapset', mapset=jobid, location=location, dbase=gisdb, flags='c')
+        gsetup.init(gisbase, gisdb, location, jobid)
+        f.write(str(gscript.gisenv()))
+
+        f.write("\n ---------- import DEM file ------------- \n")
+        stats = gscript.read_command('r.in.gdal', input=dem_full_path, output=dem)
+
         f.write("\n ---------- raster ------------- \n")
         for rast in gscript.list_strings(type='rast'):
             f.write(str(rast))
@@ -117,7 +170,6 @@ def SC(x, y, damh, interval):
         f.write(str(datetime.now()))
         # stats = gscript.read_command('r.watershed', elevation=dem, threshold='10000', accumulation='accum_10K', drainage='draindir_10K', basin='basin_10K', flags='s', overwrite=True)
         stats = gscript.read_command('r.watershed', elevation=dem, threshold='10000', drainage='draindir_10K', flags='s', overwrite=True)
-
 
         # Delineate watershed
         f.write("\n ---------- Delineate watershed ------------- \n")
