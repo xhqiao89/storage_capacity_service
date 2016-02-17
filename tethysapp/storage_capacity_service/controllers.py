@@ -3,7 +3,7 @@
 import os
 import sys
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 import binascii
 import subprocess
 import tempfile
@@ -13,8 +13,8 @@ from django.http import JsonResponse
 
 
 # Apache should have ownership and full permission over this path
-DEM_FULL_PATH = "/home/drew/Downloads/BearCk.tif"
-DEM_NAME = 'BearCk' # DEM layer name, no extension (no .tif)
+DEM_FULL_PATH = "/home/drew/dem/dr_srtm_30.tif"
+DEM_NAME = 'dr_srtm_30' # DEM layer name, no extension (no .tif)
 GISBASE = "/usr/lib/grass70" # the full path to GRASS installation
 GRASS7BIN = "grass70" # the command to start GRASS from shell
 
@@ -25,6 +25,12 @@ def home(request):
     """
     # http://127.0.0.1:8000/apps/storage-capacity-service/?xlon=1696907&ylat=7339134.4&prj=native&damh=200.0&interval=15.0
     # http://127.0.0.1:8000/apps/storage-capacity-service/?xlon=1696107&ylat=7339934.4&prj=native&damh=200.0&interval=5.0
+    # http://127.0.0.1:8000/apps/storage-capacity-service/?xlon=-7864081.6285&ylat=2098445.10332&prj=native&damh=200.0&interval=5.0
+    # http://127.0.0.1:8000/apps/storage-capacity-service/?xlon=-7822584.673&ylat=2102318.724&prj=native&damh=2&interval=1
+
+    # http://127.0.0.1:8000/apps/storage-capacity-service/?xlon=-7958864.55633&ylat=2038268.9716&prj=native&damh=50&interval=15
+    # http://127.0.0.1:8000/apps/storage-capacity-service/?xlon=-70.5339&ylat=18.6011&prj=native&damh=50&interval=10
+
 
     # output_csv = "sc.csv"
 
@@ -80,6 +86,8 @@ def home(request):
         result_dict['job_id'] = jobid
         result_dict['t_start'] = time_start
         result_dict['t_end'] = datetime.now()
+        elapsed = result_dict['t_end'] - result_dict['t_start']
+        result_dict['t_elapsed'] = str(elapsed)
         result_dict["status"] = status
         result_dict["message"] = message
         result_dict['sc'] = sc
@@ -96,23 +104,20 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
     grass7bin = GRASS7BIN
 
     gisdb = os.path.join(tempfile.gettempdir(), 'grassdata')
-    location = "sc-location"
+    if not os.path.exists(gisdb):
+        os.mkdir(gisdb)
+    location = dem
     mapset = "PERMANENT"
     keep_intermediate = False
     msg = ""
 
     log_name = 'log_{0}.log'.format(jobid)
     log_path = os.path.join(gisdb, log_name)
-
+    print log_path
     f = open(log_path, 'w', 0)
 
     temp_files_list = []
     try:
-        # override for now with TEMP dir
-        if not os.path.exists(gisdb):
-            f.write('\n---------create GISDB--------------------\n')
-            f.write('{0}\n'.format(gisdb))
-            os.mkdir(gisdb)
 
         location_path = os.path.join(gisdb, location)
         if not os.path.exists(location_path):
@@ -204,28 +209,39 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
                 west = float(key.split(":")[1])
             elif "east:" in key:
                 east = float(key.split(":")[1])
+            elif "nsres:" in key:
+                nsres = float(key.split(":")[1])
+            elif "ewres:" in key:
+                ewres = float(key.split(":")[1])
 
-        # check if xlon, ylat is within the extent of dem
-        if xlon < west or xlon > east:
-            f.write("\n ERROR: xlon is out of dem region. \n")
-            raise Exception("(xlon, ylat) is out of dem region.")
-        elif ylat < south or ylat > north:
-            f.write("\n ERROR: ylat is out of dem region. \n")
-            raise Exception("(xlon, ylat) is out of dem region.")
+        cell_area = nsres * ewres
+
+        # # check if xlon, ylat is within the extent of dem
+        # if xlon < west or xlon > east:
+        #     f.write("\n ERROR: xlon is out of dem region. \n")
+        #     raise Exception("(xlon, ylat) is out of dem region.")
+        # elif ylat < south or ylat > north:
+        #     f.write("\n ERROR: ylat is out of dem region. \n")
+        #     raise Exception("(xlon, ylat) is out of dem region.")
 
         # Flow accumulation analysis
 
         f.write("\n ---------- Flow accumulation analysis ------------- \n")
         f.write(str(datetime.now()))
-        # stats = gscript.read_command('r.watershed', elevation=dem, threshold='10000', accumulation='accum_10K', drainage='draindir_10K', basin='basin_10K', flags='s', overwrite=True)
-        drainage = "drain_10k_{0}".format(jobid)
-        temp_files_list.append(drainage)
-        stats = gscript.read_command('r.watershed', elevation=dem, threshold='10000', drainage=drainage, flags='s', overwrite=True)
+
+        # drainage = "{0}_drain_10k_{1}".format(dem, jobid)
+        # temp_files_list.append(drainage)
+        # stats = gscript.read_command('r.watershed', elevation=dem, threshold='10000', drainage=drainage, flags='s', overwrite=True)
+
+        drainage = "{0}_drain_10k".format(dem)
+        path_to_drainage = os.path.join(gisdb, location, mapset, "cell", drainage)
+        if not os.path.exists(path_to_drainage):
+            stats = gscript.read_command('r.watershed', elevation=dem, threshold='10000', drainage=drainage, flags='s', overwrite=True)
 
 
         # Delineate watershed
         f.write("\n ---------- Delineate watershed ------------- \n")
-        basin = "basin_{0}".format(jobid)
+        basin = "{0}_basin_{1}".format(dem, jobid)
         temp_files_list.append(basin)
         stats = gscript.read_command('r.water.outlet', input=drainage, output=basin, coordinates=outlet, overwrite=True)
 
@@ -244,6 +260,7 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
         outlet_info = gscript.read_command('r.what', map=dem, coordinates=outlet)
         outlet_elev = outlet_info.split('||')[1]
         outlet_elev = float(outlet_elev)
+        f.write("---------- {0} ------------- \n".format(outlet_elev))
         dam_elev = outlet_elev + dam_h
 
         elev_list = []
@@ -263,18 +280,24 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
             f.write(str(elev))
             f.write(", ")
             #Resevior volume calculation
-            lake_rast = 'lake_{0}_{1}'.format(jobid, str(elev))
+            lake_rast = '{0}_lake_{1}_{2}'.format(dem, jobid, str(elev))
             temp_files_list.append(lake_rast)
             f.write("\n111 --- No.{}\n".format(count))
             f.write(str(datetime.now()))
-            gscript.read_command('r.lake', elevation=dem_cropped, coordinates=outlet, waterlevel=elev, lake=lake_rast, overwrite=True)
+            stats = gscript.read_command('r.lake', elevation=dem_cropped, coordinates=outlet, waterlevel=elev, lake=lake_rast, overwrite=True)
+            f.write(stats)
             f.write("\n222 --- No.{}\n".format(count))
             f.write(str(datetime.now()))
-            stats = gscript.read_command('r.volume', input=lake_rast, clump=lake_rast)
-            f.write("\n333 --- No.{}\n".format(count))
-            f.write(str(datetime.now()))
-            f.write(stats)
-            volume = float(stats.split('Total Volume =')[1])
+
+
+            stats = gscript.parse_command('r.univar', map=lake_rast, flags='g')
+            f.write(str(stats))
+
+            sum_height = float(stats['sum'])
+
+            # stats = gscript.read_command('r.volume', input=lake_rast, clump=lake_rast)
+
+            volume = sum_height * cell_area
             storage = (volume, elev)
             print("No. {0}--------------------> sc is {1} \n".format(count, str(storage)))
             storage_list.append(storage)
