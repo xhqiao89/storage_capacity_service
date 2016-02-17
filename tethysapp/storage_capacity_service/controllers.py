@@ -106,7 +106,7 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
     gisdb = os.path.join(tempfile.gettempdir(), 'grassdata')
     if not os.path.exists(gisdb):
         os.mkdir(gisdb)
-    location = dem
+    location = "location_{0}".format(dem)
     mapset = "PERMANENT"
     keep_intermediate = False
     msg = ""
@@ -216,13 +216,13 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
 
         cell_area = nsres * ewres
 
-        # # check if xlon, ylat is within the extent of dem
-        # if xlon < west or xlon > east:
-        #     f.write("\n ERROR: xlon is out of dem region. \n")
-        #     raise Exception("(xlon, ylat) is out of dem region.")
-        # elif ylat < south or ylat > north:
-        #     f.write("\n ERROR: ylat is out of dem region. \n")
-        #     raise Exception("(xlon, ylat) is out of dem region.")
+        # check if xlon, ylat is within the extent of dem
+        if xlon < west or xlon > east:
+            f.write("\n ERROR: xlon is out of dem region. \n")
+            raise Exception("(xlon, ylat) is out of dem region.")
+        elif ylat < south or ylat > north:
+            f.write("\n ERROR: ylat is out of dem region. \n")
+            raise Exception("(xlon, ylat) is out of dem region.")
 
         # Flow accumulation analysis
 
@@ -258,9 +258,15 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
         # Read outlet elevation
         f.write("\n ---------- Read outlet elevation ------------- \n")
         outlet_info = gscript.read_command('r.what', map=dem, coordinates=outlet)
+        f.write("---------- {0} ------------- \n".format(outlet_info))
         outlet_elev = outlet_info.split('||')[1]
-        outlet_elev = float(outlet_elev)
-        f.write("---------- {0} ------------- \n".format(outlet_elev))
+        try:
+            outlet_elev = float(outlet_elev)
+        except Exception as e:
+            f.write("{0} \n".format(e.message))
+            raise Exception("This point has no data.")
+
+        f.write("----elev---- {0} ------------- \n".format(outlet_elev))
         dam_elev = outlet_elev + dam_h
 
         elev_list = []
@@ -291,7 +297,7 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
 
 
             stats = gscript.parse_command('r.univar', map=lake_rast, flags='g')
-            f.write(str(stats))
+            f.write("\n{0}\n".format(str(stats)))
 
             sum_height = float(stats['sum'])
 
@@ -299,7 +305,7 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
 
             volume = sum_height * cell_area
             storage = (volume, elev)
-            print("No. {0}--------------------> sc is {1} \n".format(count, str(storage)))
+            print("\nNo. {0}--------------------> sc is {1} \n".format(count, str(storage)))
             storage_list.append(storage)
 
         for sc in storage_list:
