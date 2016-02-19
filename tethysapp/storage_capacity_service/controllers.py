@@ -2,7 +2,6 @@
 
 import os
 import sys
-import csv
 from datetime import datetime, timedelta
 import binascii
 import subprocess
@@ -10,23 +9,42 @@ import tempfile
 
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
+from tethys_apps.sdk.gizmos import Button, TextInput, SelectInput
+from django.shortcuts import render
+from tethys_gizmos.gizmo_options import MapView, MVView
 
+# DR
+# http://127.0.0.1:8000/apps/storage-capacity-service/?xlon=-7958864.55633&ylat=2038268.9716&prj=native&damh=50&interval=15
+# BearCK
+# http://127.0.0.1:8000/apps/storage-capacity-service/?xlon=1696907&ylat=7339134.4&prj=native&damh=200.0&interval=15.0
 
 # Apache should have ownership and full permission over this path
-DEM_FULL_PATH = "/home/drew/dem/dr_srtm_30.tif"
+DEM_FULL_PATH = "/home/sherry/Downloads/DR/dr_srtm_30.tif"
 DEM_NAME = 'dr_srtm_30' # DEM layer name, no extension (no .tif)
 GISBASE = "/usr/lib/grass70" # the full path to GRASS installation
 GRASS7BIN = "grass70" # the command to start GRASS from shell
 
 @login_required()
 def home(request):
-    """
-    Controller for the app home page.
-    """
-    # BearCk
-    # http://127.0.0.1:8000/apps/storage-capacity-service/?xlon=1696907&ylat=7339134.4&prj=native&damh=200.0&interval=15.0
-    # DR
-    # http://127.0.0.1:8000/apps/storage-capacity-service/?xlon=-7958864.55633&ylat=2038268.9716&prj=native&damh=50&interval=15
+
+    btnSearch = Button(display_text="Generate Storage Capacity Curve",
+                        name="btnSearch",
+                        attributes="onclick=run_sc_service();",
+                        submit=False)
+
+    damHeight = TextInput(display_text='Dam Height (m):',
+                    name="damHeight",
+                    initial="",
+                    disabled=False,
+                    attributes="")
+
+    context = {'btnSearch': btnSearch,
+               'damHeight': damHeight
+               }
+
+    return render(request,'storage_capacity_service/home.html', context)
+
+def sc_service(request):
 
     string_length = 4
     jobid = binascii.hexlify(os.urandom(string_length))
@@ -169,16 +187,17 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
         gsetup.init(gisbase, gisdb, location, mapset)
         f.write(str(gscript.gisenv()))
 
-        # Check dem file, import if not exist
-        dem_in_mapset_path = location_path = os.path.join(gisdb, location, mapset, "cell", dem)
-        if not os.path.exists(dem_in_mapset_path):
+        # Check the dem file, import if not exist
+        dem_mapset_path = location_path = os.path.join(gisdb, location, mapset, "cell", dem)
+        if not os.path.exists(dem_mapset_path):
             f.write("\n ---------- import DEM file ------------- \n")
             stats = gscript.read_command('r.in.gdal', input=dem_full_path, output=dem)
+
         # List all files in location to check if the DEM file imported successfully
-        f.write("\n ---------- raster ------------- \n")
+        f.write("\n ---------- List raster ------------- \n")
         for rast in gscript.list_strings(type='rast'):
             f.write(str(rast))
-        f.write("\n ---------- vector ------------- \n")
+        f.write("\n ---------- List vector ------------- \n")
         for vect in gscript.list_strings(type='vect'):
             f.write(str(vect))
 

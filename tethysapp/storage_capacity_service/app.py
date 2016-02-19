@@ -20,8 +20,11 @@ class Ls(TethysAppBase):
         UrlMap = url_map_maker(self.root_url)
 
         url_maps = (UrlMap(name='home',
-                           url='storage-capacity-service',
-                           controller='storage_capacity_service.controllers.home'),
-        )
+                            url='storage-capacity-service',
+                            controller='storage_capacity_service.controllers.home'),
+                    UrlMap(name='sc_service',
+                           url='storage-capacity-service/sc-service',
+                           controller='storage_capacity_service.controllers.sc_service'),
+                    )
 
         return url_maps
