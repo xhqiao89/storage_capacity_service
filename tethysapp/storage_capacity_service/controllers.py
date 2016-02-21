@@ -116,12 +116,11 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
     msg = ""
 
     # Create log file for each job
-    logs_path = os.path.join(tempfile.gettempdir(), 'grassdata', "logs")
+    logs_path = LOGS_PATH
     if not os.path.exists(logs_path):
         os.mkdir(logs_path)
     log_name = 'log_{0}.log'.format(jobid)
-    log_path = LOGS_PATH
-    f = open(log_path, 'w', 0)
+    f = open(os.path.join(logs_path, log_name), 'w', 0)
 
     # Create output_data folder path
     output_data_path = OUTPUT_DATA_PATH
