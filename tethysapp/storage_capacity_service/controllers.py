@@ -9,14 +9,17 @@ import subprocess
 import tempfile
 
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse
+from django.http import HttpResponse, FileResponse, JsonResponse
 
-
-# Apache should have ownership and full permission over this path
+# Apache should have ownership and full permission to access this path
 DEM_FULL_PATH = "/home/drew/dem/dr_srtm_30.tif"
 DEM_NAME = 'dr_srtm_30' # DEM layer name, no extension (no .tif)
-GISBASE = "/usr/lib/grass70" # the full path to GRASS installation
-GRASS7BIN = "grass70" # the command to start GRASS from shell
+GISBASE = "/usr/lib/grass70" # full path to GRASS installation
+GRASS7BIN = "grass70" # command to start GRASS from shell
+GISDB = os.path.join(tempfile.gettempdir(), 'grassdata')
+LOGS_PATH = os.path.join(tempfile.gettempdir(), 'grassdata', "logs")
+OUTPUT_DATA_PATH = os.path.join(tempfile.gettempdir(), 'grassdata', "output_data")
+
 
 @login_required()
 def home(request):
@@ -34,6 +37,7 @@ def home(request):
     status = "error"
     message = ""
     sc = []
+    lake_list = []
     input_para = {}
 
     try:
@@ -59,16 +63,18 @@ def home(request):
                 raise Exception(message)
 
             # Run SC()
-            sc_list, msg = SC(jobid, xlon, ylat, prj, damh, interval)
+            sc_list, lake_list, msg = SC(jobid, xlon, ylat, prj, damh, interval)
 
             #Check results
             if sc_list is not None:
                 status = "success"
                 sc = sc_list
+                lake_list = lake_list
                 message += msg
             else:
                 status = "error"
                 sc = []
+                lake_list = []
                 message += msg
         else:
             raise Exception("Please call this service in a GET request.")
@@ -89,6 +95,7 @@ def home(request):
         result_dict['SC_RESULT'] = sc
         result_dict["INPUT"] = input_para
         result_dict["NOTE"] = "If you encountered errors. Please contact Admin with the JobID."
+        result_dict["LAKE"] = lake_list
         return JsonResponse(result_dict)
 
 
@@ -98,9 +105,9 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
     dem = DEM_NAME
     gisbase = GISBASE
     grass7bin = GRASS7BIN
+    gisdb = GISDB
 
     # Define grass data folder, location, mapset
-    gisdb = os.path.join(tempfile.gettempdir(), 'grassdata')
     if not os.path.exists(gisdb):
         os.mkdir(gisdb)
     location = "location_{0}".format(dem)
@@ -109,9 +116,17 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
     msg = ""
 
     # Create log file for each job
+    logs_path = os.path.join(tempfile.gettempdir(), 'grassdata', "logs")
+    if not os.path.exists(logs_path):
+        os.mkdir(logs_path)
     log_name = 'log_{0}.log'.format(jobid)
-    log_path = os.path.join(gisdb, log_name)
+    log_path = LOGS_PATH
     f = open(log_path, 'w', 0)
+
+    # Create output_data folder path
+    output_data_path = OUTPUT_DATA_PATH
+    if not os.path.exists(output_data_path):
+        os.mkdir(output_data_path)
 
     temp_files_list = []
 
@@ -235,13 +250,13 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
 
         # Delineate watershed
         f.write("\n ---------- Delineate watershed ------------- \n")
-        basin = "{0}_basin_{1}".format(dem, jobid)
+        basin = "{0}_{1}_basin".format(dem, jobid)
         temp_files_list.append(basin)
         stats = gscript.read_command('r.water.outlet', input=drainage, output=basin, coordinates=outlet, overwrite=True)
 
         # Cut dem with watershed
         f.write("\n -------------- Cut dem ----------------- \n")
-        dem_cropped = "{0}_cropped_{1}".format(dem, jobid)
+        dem_cropped = "{0}_{1}_cropped".format(dem, jobid)
         mapcalc_cmd = '{0} = if({1}, {2})'.format(dem_cropped, basin, dem)
         temp_files_list.append(dem_cropped)
         gscript.mapcalc(mapcalc_cmd, overwrite=True, quiet=True)
@@ -273,6 +288,7 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
         #For each interval point, calculate reservior volume
         f.write("\n ------------- Reservoir volume calculation ---------------- \n")
         storage_list = []
+        lake_output_list = []
         count = 0
         for elev in elev_list:
             count += 1
@@ -281,7 +297,7 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
 
             # Generate reservoir raster file
             f.write("\n-----------Generate lake file ---------- No.{}\n".format(count))
-            lake_rast = '{0}_lake_{1}_{2}'.format(dem, jobid, str(elev))
+            lake_rast = '{0}_{1}_lake_{2}'.format(dem, jobid, str(elev))
             temp_files_list.append(lake_rast)
             stats = gscript.read_command('r.lake', elevation=dem_cropped, coordinates=outlet, waterlevel=elev, lake=lake_rast, overwrite=True)
 
@@ -297,6 +313,38 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
             print("\nNo. {0}--------> sc is {1} \n".format(count, str(storage)))
             storage_list.append(storage)
 
+            # output lake
+            # r.mapcalc expression="lake_285.7846_all_0 = if( lake_285.7846, 0)" --o
+            f.write("\n -------------- Set all values of raster lake to 0 ----------------- \n")
+            lake_rast_all_0 = "{0}_all_0".format(lake_rast)
+            mapcalc_cmd = '{0} = if({1}, 0)'.format(lake_rast_all_0, lake_rast)
+            gscript.mapcalc(mapcalc_cmd, overwrite=True, quiet=True)
+
+            # covert raster lake_rast_all_0 into vector
+            # r.to.vect input='lake_285.7846_all_0@drew' output='lake_285_all_0_vec' type=area --o
+            f.write("\n -------------- convert raster lake_rast_all_0 into vector ----------------- \n")
+            lake_rast_all_0_vec = "{0}_all_0_vect".format(lake_rast)
+            lake_rast_all_0_vec = lake_rast_all_0_vec.replace(".", "_")
+            f.write("\n -------------- {0} ----------------- \n".format(lake_rast_all_0_vec))
+            stats = gscript.parse_command('r.to.vect', input=lake_rast_all_0, output=lake_rast_all_0_vec, type="area", overwrite=True)
+
+            # output GeoJSON
+            # v.out.ogr -c input='lake_285_all_0_vec' output='/tmp/lake_285_all_0_vec.geojson' format=GeoJSON type=area --overwrite
+            geojson_f_name = "{0}.GEOJSON".format(lake_rast.replace(".", "_"))
+            lake_rast_all_0_vec_GEOJSON = os.path.join(output_data_path, geojson_f_name)
+            stats = gscript.parse_command('v.out.ogr', input=lake_rast_all_0_vec, output=lake_rast_all_0_vec_GEOJSON, \
+                                          format="GeoJSON", type="area", overwrite=True, flags="c")
+
+            # output KML
+            # v.out.ogr -c input='lake_285_all_0_vec' output='/tmp/lake_285_all_0_vec.KML' format=KML type=area --overwrite
+            kml_f_name = "{0}.KML".format(lake_rast.replace(".", "_"))
+            lake_rast_all_0_vec_KML = os.path.join(output_data_path, kml_f_name)
+            stats = gscript.parse_command('v.out.ogr', input=lake_rast_all_0_vec, output=lake_rast_all_0_vec_KML, \
+                                          format="KML", type="area", overwrite=True, flags="c")
+
+            output_tuple = (str(elev), geojson_f_name, kml_f_name)
+            lake_output_list.append(output_tuple)
+
         for sc in storage_list:
             f.write(str(sc))
             f.write("\n")
@@ -304,7 +352,7 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
         f.write(str(datetime.now()))
         f.close()
         keep_intermediate = False
-        return storage_list, msg
+        return storage_list, lake_output_list, msg
 
     except Exception as e:
         keep_intermediate = True
@@ -314,7 +362,7 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
             f.write("\n-------------!!!!!!  ERROR  !!!!!!--------------\n")
             f.write(e.message)
             f.close()
-        return None, msg
+        return None, None, msg
 
     finally:
         # Remove all temp files
@@ -323,3 +371,21 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
                 f_fullpath = "{0}/{1}/{2}/cell/{3}".format(gisdb, location, mapset, f)
                 if os.path.exists(f_fullpath):
                     os.remove(f_fullpath)
+
+# http://127.0.0.1:8000/apps/storage-capacity-service/download/?filename=dr_srtm_30_a45b7df0_lake_523_0.GEOJSON
+def download_output_files(request):
+    try:
+        output_filename = request.GET.get("filename", None)
+        print output_filename
+
+        output_file_path = os.path.join(OUTPUT_DATA_PATH, output_filename)
+        print output_file_path
+        response = FileResponse(open(output_file_path, 'r'), content_type='text/plain')
+        response['Content-Disposition'] = 'attachment; filename="' + output_filename
+        response['Content-Length'] = os.path.getsize(output_file_path)
+        return response
+
+    except Exception as e:
+        response = HttpResponse(status=503)
+        response.content = "<h3>Failed to download this files!</h3>"
+        return response

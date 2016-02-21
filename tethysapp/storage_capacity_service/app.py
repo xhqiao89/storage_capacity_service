@@ -22,6 +22,10 @@ class Ls(TethysAppBase):
         url_maps = (UrlMap(name='home',
                            url='storage-capacity-service',
                            controller='storage_capacity_service.controllers.home'),
+                    UrlMap(name='download',
+                           url='storage-capacity-service/download',
+                           controller='storage_capacity_service.controllers.download_output_files'),
+
         )
 
         return url_maps
