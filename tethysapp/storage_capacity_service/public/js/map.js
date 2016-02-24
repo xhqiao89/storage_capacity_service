@@ -1,5 +1,7 @@
 var map, click_point_layer;
-var outlet_x, outlet_y, damh
+var outlet_x, outlet_y, damh, interval;
+
+var displayStatus = $('#display-status');
 
 $(document).ready(function () {
 
@@ -46,16 +48,57 @@ $(document).ready(function () {
     var lat = 18.9108;
     var lon = -71.2500;
     CenterMap(lat, lon);
-    map.getView().setZoom(7.8);
+    map.getView().setZoom(7);
 
     map.on('click', function(evt) {
         outlet_x = evt.coordinate[0];
         outlet_y = evt.coordinate[1];
         addClickPoint(evt.coordinate);
         map.getView().setCenter(evt.coordinate);
-        map.getView().setZoom(13);
+        map.getView().setZoom(15);
 
     })
+
+
+    var chart_options = {
+	chart: {
+		renderTo: 'sc_chart',
+		zoomType: 'x'
+	},
+        loading: {
+            labelStyle: {
+                top: '100%',
+		        left: '100%',
+                display: 'block',
+                width: '100px',
+                height: '100px',
+                backgroundColor: '#000'
+            }
+        },
+	title: {
+		text: 'Storage Capacity Curve'
+	},
+    xAxis: {
+		title: {
+			text: 'Storage(m3)'
+		}
+		},
+	yAxis: {
+		title: {
+			text: 'Elevation(m)'
+		}
+		},
+	legend: {
+		enabled: true
+	},
+    series: [{}]
+
+};
+
+    chart_options.series[0].type = 'line';
+    chart_options.series[0].name = 'Elevation-Storage';
+
+    chart = new Highcharts.Chart(chart_options);
 
 });
 
@@ -86,13 +129,65 @@ function addClickPoint(coordinates){
 function run_sc_service() {
 
     damh = document.getElementById("damHeight").value;
-    alert(damh)
+    interval = document.getElementById("interval").value;
+    alert(damh);
+    alert(interval);
     alert(outlet_x);
     alert(outlet_y);
 
+    displayStatus.removeClass('error');
+    displayStatus.addClass('calculating');
+    displayStatus.html('<em>Calculating...</em>');
 
+    $.ajax({
+        type: 'GET',
+        url: 'sc-service/',
+        dataType:'json',
+        data: {
+                'xlon': outlet_x,
+                'ylat': outlet_y,
+                'prj' : "native",
+                'damh': damh,
+                'interval': interval
+                        },
+        success: function (data) {
 
+            if ('error' in data) {
+                displayStatus.removeClass('calculating');
+                displayStatus.addClass('error');
+                displayStatus.html('<em>' + data.error + '</em>');
+            }
+            else
+            {
+                displayStatus.removeClass('calculating');
+                displayStatus.addClass('success');
+                displayStatus.html('<em>Success!</em>');
+                //alert(data.SC_RESULT[0][0]);
+                //alert(data.SC_RESULT.length)
 
+                //var elev=[];
+                //var stor=[];
+                //for (i=0; i< data.SC_RESULT.length; i++){
+                //    elev.push(parseFloat(data.SC_RESULT[i][1]));
+                //    stor.push(parseFloat(data.SC_RESULT[i][0]));
+                //}
+                //alert(elev);
+                //alert(stor);
+
+                chart.series[0].setData(data.SC_RESULT);
+
+           }
+        },
+        error: function (jqXHR, textStatus, errorThrown) {
+            alert("Error");
+            debugger;
+            $('#hydroshare-proceed').prop('disabled', false);
+            console.log(jqXHR + '\n' + textStatus + '\n' + errorThrown);
+            displayStatus.removeClass('uploading');
+            displayStatus.addClass('error');
+            displayStatus.html('<em>' + errorThrown + '</em>');
+        }
+    });
 
 }
 

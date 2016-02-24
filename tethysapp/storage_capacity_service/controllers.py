@@ -29,7 +29,7 @@ def home(request):
 
     btnSearch = Button(display_text="Generate Storage Capacity Curve",
                         name="btnSearch",
-                        attributes="onclick=run_sc_service();",
+                        attributes="onclick=run_sc_service()",
                         submit=False)
 
     damHeight = TextInput(display_text='Dam Height (m):',
@@ -37,9 +37,15 @@ def home(request):
                     initial="",
                     disabled=False,
                     attributes="")
+    interval = TextInput(display_text='Interval (m):',
+                name="interval",
+                initial="",
+                disabled=False,
+                attributes="")
 
     context = {'btnSearch': btnSearch,
-               'damHeight': damHeight
+               'damHeight': damHeight,
+               'interval' : interval
                }
 
     return render(request,'storage_capacity_service/home.html', context)
@@ -342,3 +348,4 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
                 f_fullpath = "{0}/{1}/{2}/cell/{3}".format(gisdb, location, mapset, f)
                 if os.path.exists(f_fullpath):
                     os.remove(f_fullpath)
+
