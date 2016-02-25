@@ -25,6 +25,7 @@ class Ls(TethysAppBase):
                     UrlMap(name='sc_service',
                            url='storage-capacity-service/sc-service',
                            controller='storage_capacity_service.controllers.sc_service'),
+
                     )
 
         return url_maps
