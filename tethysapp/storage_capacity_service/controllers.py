@@ -1,17 +1,16 @@
 # author: Xiaohui (Sherry) Qiao, xhqiao89@gmail.com
 
 import os
-from datetime import datetime
 import binascii
 import tempfile
 
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse, FileResponse, JsonResponse
-from .sc_celery_app import add, SC
+from .sc_celery_app import add2, SC
 from .model import SessionMaker, JobRecord
 from celery.task.control import revoke
 
-from tethys_apps.sdk.gizmos import Button, TextInput, SelectInput
+from tethys_sdk.gizmos import Button, TextInput, SelectInput
 from django.shortcuts import render
 
 # Apache should have ownership and full permission to access this path
@@ -44,11 +43,10 @@ def home(request):
 
     context = {'btnSearch': btnSearch,
                'damHeight': damHeight,
-               'interval' : interval
+               'interval': interval
                }
 
     return render(request,'storage_capacity_service/home.html', context)
-
 
 
 @login_required()
@@ -63,11 +61,8 @@ def run_sc(request):
 
     string_length = 4
     jobid = binascii.hexlify(os.urandom(string_length))
-    time_start = datetime.now()
-    status = "error"
+    status = "success"
     message = ""
-    sc = []
-    lake_list = []
     input_para = {}
 
     try:
@@ -97,8 +92,7 @@ def run_sc(request):
             session.add(job_record)
             session.commit()
 
-
-            # Run SC()
+            # Run SC()ys
             task_obj = SC.apply_async((jobid, xlon, ylat, prj, damh, interval), task_id=jobid)
         else:
             raise Exception("Please call this service in a GET request.")
@@ -121,11 +115,10 @@ def run_sc(request):
 @login_required()
 def get_sc(request):
 
-    status = "error"
+    status = "success"
     message = ""
     sc = []
     lake_list = []
-    input_para = {}
 
     try:
         if request.GET:
@@ -134,19 +127,18 @@ def get_sc(request):
             if check_user_has_job(request.user.id, jobid):
                 task_obj = SC.AsyncResult(jobid)
                 if task_obj.ready():
-                    sc_list, lake_list, msg = task_obj.get()
-
+                    result_dict = task_obj.get()
                     #Check results
-                    if sc_list is not None:
-                        status = "success"
-                        sc = sc_list
-                        lake_list = lake_list
-                        message += msg
+                    if result_dict is not None:
+                        status = result_dict["status"]
+                        sc = result_dict['storage_list']
+                        lake_list = result_dict['lake_output_list']
+                        message += result_dict['msg']
                     else:
-                        status = "error"
+                        status = result_dict["status"]
                         sc = []
                         lake_list = []
-                        message += msg
+                        message += result_dict['msg']
                 else:
                     status = "running"
                     message = "The worker is still running."
@@ -172,7 +164,7 @@ def get_sc(request):
 @login_required()
 def stop_sc(request):
 
-    status = "error"
+    status = "success"
     message = "Job has been stopped."
 
     try:
@@ -196,8 +188,6 @@ def stop_sc(request):
         result_dict["MESSAGE"] = message
         result_dict["JOBID"] = jobid
         return JsonResponse(result_dict)
-
-
 
 
 # http://127.0.0.1:8000/apps/storage-capacity-service/download/?jobid=ddd&filename=dr_srtm_30_a45b7df0_lake_523_0.GEOJSON
@@ -235,3 +225,32 @@ def check_user_has_job(userid, jobid):
                 break
     session.commit()
     return user_has_job
+
+# http://127.0.0.1:8000/apps/storage-capacity-service/joblist/
+@login_required()
+def job_list(request):
+    joblist = []
+    jobstatus_dict = {}
+    session = SessionMaker()
+    job_rec_array = session.query(JobRecord).all()
+    for job_rec in job_rec_array:
+        if job_rec.userid == request.user.id:
+            joblist.append(job_rec)
+            jobstatus_dict[job_rec.jobid] = job_status(job_rec.jobid)
+            # jobstatus_dict[job_rec.jobid] = 'Unknown'
+    session.commit()
+
+    context = {'joblist': joblist,
+               'jobstatus_dict': jobstatus_dict
+               }
+
+
+
+    return render(request,'storage_capacity_service/joblist.html', context)
+
+def job_status(jobid):
+    status = "Unknown"
+    task_obj = SC.AsyncResult(jobid)
+    return task_obj.status
+
+

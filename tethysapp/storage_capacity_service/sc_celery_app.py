@@ -7,9 +7,10 @@ import tempfile
 from celery import Celery
 from celery.decorators import task
 from celery.utils.log import get_task_logger
+from tethys_apps.tethysapp.storage_capacity_service.model import SessionMaker, JobResult
 
-# comment out this line if set celery app in django settings
-app = Celery('tasks', backend='redis://localhost:6379', broker='redis://localhost:6379')
+# # comment out this line if set celery app in django settings
+# app = Celery('tasks', backend='redis://localhost:6379', broker='redis://localhost:6379')
 
 # Apache should have ownership and full permission to access this path
 DEM_FULL_PATH = "/home/drew/dem/dr_srtm_30.tif"
@@ -23,7 +24,7 @@ OUTPUT_DATA_PATH = os.path.join(tempfile.gettempdir(), 'grassdata', "output_data
 logger = get_task_logger(__name__)
 
 @task
-def add(x, y):
+def add2(x, y):
     logger.info("run add")
     r = x + y
     rslt = {}
@@ -278,6 +279,8 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
             output_tuple = (str(elev), geojson_f_name, kml_f_name)
             lake_output_list.append(output_tuple)
 
+        zero_point = (0, outlet_elev)
+        storage_list.insert(0, zero_point)
         for sc in storage_list:
             f.write(str(sc))
             f.write("\n")
@@ -285,9 +288,15 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
         f.write(str(datetime.now()))
         f.close()
         keep_intermediate = False
-        return storage_list, lake_output_list, msg
+        result = {}
+        result['status'] = 'success'
+        result['storage_list'] = storage_list
+        result['lake_output_list'] = lake_output_list
+        result['msg'] = msg
 
+        return result
     except Exception as e:
+        result = {}
         keep_intermediate = True
         print e.message
         msg = e.message
@@ -295,9 +304,19 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
             f.write("\n-------------!!!!!!  ERROR  !!!!!!--------------\n")
             f.write(e.message)
             f.close()
-        return None, None, msg
+        result['status'] = 'error'
+        result['storage_list'] = None
+        result['lake_output_list'] = None
+        result['msg'] = msg
+        return result
 
     finally:
+
+        session = SessionMaker()
+        job_result = JobResult(jobid, result)
+        session.add(job_result)
+        session.commit()
+
         # Remove all temp files
         if not keep_intermediate:
             for f in temp_files_list:

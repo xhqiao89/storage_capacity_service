@@ -35,6 +35,9 @@ class StorageCapacityService(TethysAppBase):
                     UrlMap(name='download',
                            url='storage-capacity-service/download',
                            controller='storage_capacity_service.controllers.download_output_files'),
+                    UrlMap(name='joblist',
+                           url='storage-capacity-service/joblist',
+                           controller='storage_capacity_service.controllers.job_list'),
 
         )
 

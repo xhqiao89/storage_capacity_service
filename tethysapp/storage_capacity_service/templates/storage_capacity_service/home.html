@@ -28,9 +28,7 @@
 
 {% block app_content %}
 
-<div class="col-md-8" id="map"></div>
-
-<div class="col-md-4" id="sc_chart"></div>
+<div id="map"></div>
 
 {% endblock %}
 
@@ -38,11 +36,12 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'storage_capacity_service/vendor/highcharts/highcharts.js' %}" type="text/javascript"></script>
-<script src="{% static 'storage_capacity_service/vendor/highcharts/exporting.js' %}" type="text/javascript"></script>
-<script src="{% static 'storage_capacity_service/vendor/highcharts/export-csv.js' %}" type="text/javascript"></script>
-  {{ block.super }}
-  <script src="{% static 'storage_capacity_service/vendor/openlayers/v3.5.0-dist/ol.js' %}"></script>
-  <script src="{% static 'storage_capacity_service/js/map.js' %}" type="text/javascript"></script>
+    {{ block.super }}
+    <script src="{% static 'storage_capacity_service/vendor/highcharts/highcharts.js' %}" type="text/javascript"></script>
+    <script src="{% static 'storage_capacity_service/vendor/highcharts/exporting.js' %}" type="text/javascript"></script>
+    <script src="{% static 'storage_capacity_service/vendor/highcharts/export-csv.js' %}" type="text/javascript"></script>
+
+    <script src="{% static 'storage_capacity_service/vendor/openlayers/v3.5.0-dist/ol.js' %}"></script>
+    <script src="{% static 'storage_capacity_service/js/home.js' %}" type="text/javascript"></script>
 
 {% endblock %}
