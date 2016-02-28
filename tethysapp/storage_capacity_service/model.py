@@ -72,7 +72,7 @@ class JobResult(Base):
     id = Column(Integer, primary_key=True)
 
     jobid = Column(String(32))
-    result_str = Column(JSONEncodedDict())
+    result_dict = Column(JSONEncodedDict())
 
     stop_time = Column(DateTime, default=datetime.datetime.now)
     stop_time_utc = Column(DateTime, default=datetime.datetime.utcnow)
@@ -83,7 +83,7 @@ class JobResult(Base):
         Constructor for a job_record        """
 
         self.jobid = jobid
-        self.result_str = result_str
+        self.result_dict = result_str
 
 
 

@@ -7,8 +7,8 @@ import tempfile
 from celery import Celery
 from celery.decorators import task
 from celery.utils.log import get_task_logger
-from tethys_apps.tethysapp.storage_capacity_service.model import SessionMaker, JobResult
-
+# from tethys_apps.tethysapp.storage_capacity_service.model import SessionMaker, JobResult
+from .model import SessionMaker, JobResult
 # # comment out this line if set celery app in django settings
 # app = Celery('tasks', backend='redis://localhost:6379', broker='redis://localhost:6379')
 
@@ -33,7 +33,7 @@ def add2(x, y):
     return rslt
 
 @task
-def SC(jobid, xlon, ylat, prj, damh, interval):
+def SC(jobid, xlon, ylat, prj, damh, interval, output_lake=False):
     logger.info("run SC")
 
     dem_full_path = DEM_FULL_PATH
@@ -63,6 +63,8 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
         os.mkdir(output_data_path)
 
     temp_files_list = []
+    result = {}
+    result['jobid'] = jobid
 
     try:
         # Create location
@@ -247,37 +249,38 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
             print("\nNo. {0}--------> sc is {1} \n".format(count, str(storage)))
             storage_list.append(storage)
 
-            # output lake
-            # r.mapcalc expression="lake_285.7846_all_0 = if( lake_285.7846, 0)" --o
-            f.write("\n -------------- Set all values of raster lake to 0 ----------------- \n")
-            lake_rast_all_0 = "{0}_all_0".format(lake_rast)
-            mapcalc_cmd = '{0} = if({1}, 0)'.format(lake_rast_all_0, lake_rast)
-            gscript.mapcalc(mapcalc_cmd, overwrite=True, quiet=True)
+            if output_lake:
+                # output lake
+                # r.mapcalc expression="lake_285.7846_all_0 = if( lake_285.7846, 0)" --o
+                f.write("\n -------------- Set all values of raster lake to 0 ----------------- \n")
+                lake_rast_all_0 = "{0}_all_0".format(lake_rast)
+                mapcalc_cmd = '{0} = if({1}, 0)'.format(lake_rast_all_0, lake_rast)
+                gscript.mapcalc(mapcalc_cmd, overwrite=True, quiet=True)
 
-            # covert raster lake_rast_all_0 into vector
-            # r.to.vect input='lake_285.7846_all_0@drew' output='lake_285_all_0_vec' type=area --o
-            f.write("\n -------------- convert raster lake_rast_all_0 into vector ----------------- \n")
-            lake_rast_all_0_vec = "{0}_all_0_vect".format(lake_rast)
-            lake_rast_all_0_vec = lake_rast_all_0_vec.replace(".", "_")
-            f.write("\n -------------- {0} ----------------- \n".format(lake_rast_all_0_vec))
-            stats = gscript.parse_command('r.to.vect', input=lake_rast_all_0, output=lake_rast_all_0_vec, type="area", overwrite=True)
+                # covert raster lake_rast_all_0 into vector
+                # r.to.vect input='lake_285.7846_all_0@drew' output='lake_285_all_0_vec' type=area --o
+                f.write("\n -------------- convert raster lake_rast_all_0 into vector ----------------- \n")
+                lake_rast_all_0_vec = "{0}_all_0_vect".format(lake_rast)
+                lake_rast_all_0_vec = lake_rast_all_0_vec.replace(".", "_")
+                f.write("\n -------------- {0} ----------------- \n".format(lake_rast_all_0_vec))
+                stats = gscript.parse_command('r.to.vect', input=lake_rast_all_0, output=lake_rast_all_0_vec, type="area", overwrite=True)
 
-            # output GeoJSON
-            # v.out.ogr -c input='lake_285_all_0_vec' output='/tmp/lake_285_all_0_vec.geojson' format=GeoJSON type=area --overwrite
-            geojson_f_name = "{0}.GEOJSON".format(lake_rast.replace(".", "_"))
-            lake_rast_all_0_vec_GEOJSON = os.path.join(output_data_path, geojson_f_name)
-            stats = gscript.parse_command('v.out.ogr', input=lake_rast_all_0_vec, output=lake_rast_all_0_vec_GEOJSON, \
-                                          format="GeoJSON", type="area", overwrite=True, flags="c")
+                # output GeoJSON
+                # v.out.ogr -c input='lake_285_all_0_vec' output='/tmp/lake_285_all_0_vec.geojson' format=GeoJSON type=area --overwrite
+                geojson_f_name = "{0}.GEOJSON".format(lake_rast.replace(".", "_"))
+                lake_rast_all_0_vec_GEOJSON = os.path.join(output_data_path, geojson_f_name)
+                stats = gscript.parse_command('v.out.ogr', input=lake_rast_all_0_vec, output=lake_rast_all_0_vec_GEOJSON, \
+                                              format="GeoJSON", type="area", overwrite=True, flags="c")
 
-            # output KML
-            # v.out.ogr -c input='lake_285_all_0_vec' output='/tmp/lake_285_all_0_vec.KML' format=KML type=area --overwrite
-            kml_f_name = "{0}.KML".format(lake_rast.replace(".", "_"))
-            lake_rast_all_0_vec_KML = os.path.join(output_data_path, kml_f_name)
-            stats = gscript.parse_command('v.out.ogr', input=lake_rast_all_0_vec, output=lake_rast_all_0_vec_KML, \
-                                          format="KML", type="area", overwrite=True, flags="c")
+                # output KML
+                # v.out.ogr -c input='lake_285_all_0_vec' output='/tmp/lake_285_all_0_vec.KML' format=KML type=area --overwrite
+                kml_f_name = "{0}.KML".format(lake_rast.replace(".", "_"))
+                lake_rast_all_0_vec_KML = os.path.join(output_data_path, kml_f_name)
+                stats = gscript.parse_command('v.out.ogr', input=lake_rast_all_0_vec, output=lake_rast_all_0_vec_KML, \
+                                              format="KML", type="area", overwrite=True, flags="c")
 
-            output_tuple = (str(elev), geojson_f_name, kml_f_name)
-            lake_output_list.append(output_tuple)
+                output_tuple = (str(elev), geojson_f_name, kml_f_name)
+                lake_output_list.append(output_tuple)
 
         zero_point = (0, outlet_elev)
         storage_list.insert(0, zero_point)
@@ -288,7 +291,7 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
         f.write(str(datetime.now()))
         f.close()
         keep_intermediate = False
-        result = {}
+
         result['status'] = 'success'
         result['storage_list'] = storage_list
         result['lake_output_list'] = lake_output_list
@@ -296,7 +299,7 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
 
         return result
     except Exception as e:
-        result = {}
+
         keep_intermediate = True
         print e.message
         msg = e.message
@@ -312,10 +315,7 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
 
     finally:
 
-        session = SessionMaker()
-        job_result = JobResult(jobid, result)
-        session.add(job_result)
-        session.commit()
+        save_result_to_db(jobid, result)
 
         # Remove all temp files
         if not keep_intermediate:
@@ -323,3 +323,9 @@ def SC(jobid, xlon, ylat, prj, damh, interval):
                 f_fullpath = "{0}/{1}/{2}/cell/{3}".format(gisdb, location, mapset, f)
                 if os.path.exists(f_fullpath):
                     os.remove(f_fullpath)
+
+def save_result_to_db(jobid, result):
+    session = SessionMaker()
+    job_result = JobResult(jobid, result)
+    session.add(job_result)
+    session.commit()

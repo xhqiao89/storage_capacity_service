@@ -7,11 +7,11 @@ import tempfile
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse, FileResponse, JsonResponse
 from .sc_celery_app import add2, SC
-from .model import SessionMaker, JobRecord
-from celery.task.control import revoke
+from .model import SessionMaker, JobRecord, JobResult
 
 from tethys_sdk.gizmos import Button, TextInput, SelectInput
 from django.shortcuts import render
+import datetime
 
 # Apache should have ownership and full permission to access this path
 DEM_FULL_PATH = "/home/drew/dem/dr_srtm_30.tif"
@@ -25,29 +25,28 @@ OUTPUT_DATA_PATH = os.path.join(tempfile.gettempdir(), 'grassdata', "output_data
 @login_required()
 def home(request):
 
-    btnSearch = Button(display_text="Generate Storage Capacity Curve",
+    btnCalculate = Button(display_text="Calculate",
                         name="btnSearch",
                         attributes="onclick=run_sc_service()",
                         submit=False)
 
     damHeight = TextInput(display_text='Dam Height (m):',
                     name="damHeight",
-                    initial="",
+                    initial="50",
                     disabled=False,
                     attributes="")
     interval = TextInput(display_text='Interval (m):',
                 name="interval",
-                initial="",
+                initial="10",
                 disabled=False,
                 attributes="")
 
-    context = {'btnSearch': btnSearch,
+    context = {'btnCalculate': btnCalculate,
                'damHeight': damHeight,
                'interval': interval
                }
 
     return render(request,'storage_capacity_service/home.html', context)
-
 
 @login_required()
 def run_sc(request):
@@ -87,6 +86,7 @@ def run_sc(request):
                 message = "Error: Interval should be greater than 0!"
                 raise Exception(message)
 
+            # save parameters to DB
             session = SessionMaker()
             job_record = JobRecord(request.user.id, jobid, xlon, ylat, prj, damh, interval)
             session.add(job_record)
@@ -114,51 +114,53 @@ def run_sc(request):
 # http://127.0.0.1:8000/apps/storage-capacity-service/get/?jobid=04771964-90cf-4aa4-8eee-d4a1b4e2cac1
 @login_required()
 def get_sc(request):
-
-    status = "success"
-    message = ""
-    sc = []
-    lake_list = []
-
+    jobinfo_dict = {}
     try:
         if request.GET:
             jobid = request.GET.get("jobid", None)
+            jobinfo_dict['jobid'] = jobid
+            jobinfo_dict['status'] = "success"
 
             if check_user_has_job(request.user.id, jobid):
-                task_obj = SC.AsyncResult(jobid)
-                if task_obj.ready():
-                    result_dict = task_obj.get()
-                    #Check results
-                    if result_dict is not None:
-                        status = result_dict["status"]
-                        sc = result_dict['storage_list']
-                        lake_list = result_dict['lake_output_list']
-                        message += result_dict['msg']
-                    else:
-                        status = result_dict["status"]
-                        sc = []
-                        lake_list = []
-                        message += result_dict['msg']
+                session = SessionMaker()
+                job_rec = session.query(JobRecord).filter(JobRecord.jobid == jobid)[0]
+                start_time_utc = job_rec.start_time_utc
+
+                job_result_array = session.query(JobResult).filter(JobResult.jobid == jobid)
+
+                if job_result_array.count() == 0:
+                    job_status = check_job_status(job_rec.jobid)
+                    now_time_utc = datetime.datetime.utcnow()
+                    stop_time_utc = now_time_utc
                 else:
-                    status = "running"
-                    message = "The worker is still running."
+                    job_result = job_result_array[0]
+                    job_status = job_result.result_dict['status']
+                    stop_time_utc = job_result.stop_time_utc
+                    jobinfo_dict["job_result"] = job_result.result_dict
+                execution_time = stop_time_utc-start_time_utc
+
+                jobinfo_dict["jobid"] = job_rec.jobid
+                jobinfo_dict["job_record"] = {"xlon": job_rec.xlon,
+                                         "ylat": job_rec.ylat,
+                                         "prj": job_rec.prj,
+                                         "damh": job_rec.damh,
+                                         "interval": job_rec.interval,
+                                         "start_time_utc": job_rec.start_time_utc
+                                         }
+                jobinfo_dict["job_status"] = job_status
+                jobinfo_dict["execution_time"] = str(execution_time)
+
+                session.commit()
             else:
                 raise Exception("Cannot find this job or this job is invisible to you.")
         else:
             raise Exception("Please call this service in a GET request.")
     except Exception as ex:
-        status = "error"
-        message = ex.message
-
+        jobinfo_dict['status'] = "error"
+        jobinfo_dict['msg'] = ex.message
     # Return inputs and results
     finally:
-        result_dict = {}
-        result_dict["STATUS"] = status
-        result_dict["MESSAGE"] = message
-        result_dict['SC_RESULT'] = sc
-        result_dict["LAKE"] = lake_list
-        result_dict["JOBID"] = jobid
-        return JsonResponse(result_dict)
+        return JsonResponse(jobinfo_dict)
 
 # http://127.0.0.1:8000/apps/storage-capacity-service/stop/?jobid=04771964-90cf-4aa4-8eee-d4a1b4e2cac1
 @login_required()
@@ -172,7 +174,18 @@ def stop_sc(request):
             jobid = request.GET.get("jobid", None)
 
             if check_user_has_job(request.user.id, jobid):
-                revoke(jobid, terminate=True)
+                # check if result has been saved in DB
+                session = SessionMaker()
+                job_result_array = session.query(JobResult).filter(JobResult.jobid == jobid)
+                if job_result_array.count() == 0:
+                    task_obj = SC.AsyncResult(jobid)
+                    task_obj.revoke(terminate=True)
+                    task_obj.forget()
+
+                else:
+                    session.delete(job_result_array[0])
+                session.delete(session.query(JobRecord).filter(JobRecord.jobid == jobid)[0])
+                session.commit()
             else:
                 raise Exception("Cannot find this job or this job is invisible to you.")
         else:
@@ -217,12 +230,9 @@ def check_user_has_job(userid, jobid):
     user_has_job = False
 
     session = SessionMaker()
-    job_rec_array = session.query(JobRecord).all()
-    for job_rec in job_rec_array:
-        if job_rec.userid == userid:
-            if job_rec.jobid == jobid:
-                user_has_job = True
-                break
+    hit_cnt = session.query(JobRecord).filter(JobRecord.userid == userid, JobRecord.jobid == jobid).count()
+    if hit_cnt > 0:
+        user_has_job = True
     session.commit()
     return user_has_job
 
@@ -230,27 +240,40 @@ def check_user_has_job(userid, jobid):
 @login_required()
 def job_list(request):
     joblist = []
-    jobstatus_dict = {}
+    jobresult_dict = {}
     session = SessionMaker()
-    job_rec_array = session.query(JobRecord).all()
+    user_id = request.user.id
+
+    job_rec_array = session.query(JobRecord).filter(JobRecord.userid == user_id)
     for job_rec in job_rec_array:
-        if job_rec.userid == request.user.id:
-            joblist.append(job_rec)
-            jobstatus_dict[job_rec.jobid] = job_status(job_rec.jobid)
-            # jobstatus_dict[job_rec.jobid] = 'Unknown'
+        start_time_utc = job_rec.start_time_utc
+        joblist.append(job_rec)
+        job_result_array = session.query(JobResult).filter(JobResult.jobid == job_rec.jobid)
+        if job_result_array.count() == 0:
+            jobstatus = check_job_status(job_rec.jobid)
+            now_time_utc = datetime.datetime.utcnow()
+            stop_time_utc = now_time_utc
+        else:
+            job_result = job_result_array[0]
+            jobstatus = job_result.result_dict['status']
+            stop_time_utc = job_result.stop_time_utc
+        execution_time = stop_time_utc-start_time_utc
+        jobresult_dict[job_rec.jobid] = {"status": jobstatus, "stop_time_utc": stop_time_utc, "execution_time": execution_time}
+
     session.commit()
 
     context = {'joblist': joblist,
-               'jobstatus_dict': jobstatus_dict
-               }
+               'jobresult_dict': jobresult_dict
+                }
 
+    return render(request, 'storage_capacity_service/joblist.html', context)
 
-
-    return render(request,'storage_capacity_service/joblist.html', context)
-
-def job_status(jobid):
+def check_job_status(jobid):
     status = "Unknown"
     task_obj = SC.AsyncResult(jobid)
-    return task_obj.status
+    status = task_obj.status
+    if status.lower() == "pending":
+        status = "Running"
+    return status
 
 
