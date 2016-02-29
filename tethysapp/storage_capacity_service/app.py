@@ -1,7 +1,6 @@
 from tethys_sdk.base import TethysAppBase, url_map_maker
 from tethys_sdk.stores import PersistentStore
 
-
 class StorageCapacityService(TethysAppBase):
     """
     Tethys app class for ls.
@@ -23,6 +22,9 @@ class StorageCapacityService(TethysAppBase):
         url_maps = (UrlMap(name='home',
                             url='storage-capacity-service',
                             controller='storage_capacity_service.controllers.home'),
+                    UrlMap(name='joblist',
+                       url='storage-capacity-service/joblist',
+                       controller='storage_capacity_service.controllers.job_list'),
                     UrlMap(name='run',
                            url='storage-capacity-service/run',
                            controller='storage_capacity_service.controllers.run_sc'),
@@ -35,10 +37,6 @@ class StorageCapacityService(TethysAppBase):
                     UrlMap(name='download',
                            url='storage-capacity-service/download',
                            controller='storage_capacity_service.controllers.download_output_files'),
-                    UrlMap(name='joblist',
-                           url='storage-capacity-service/joblist',
-                           controller='storage_capacity_service.controllers.job_list'),
-
         )
 
         return url_maps

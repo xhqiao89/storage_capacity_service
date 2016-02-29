@@ -103,8 +103,7 @@ def run_sc(request):
     # Return inputs and results
     finally:
         result_dict = {}
-        result_dict['JOBID'] = task_obj.id
-        result_dict['S_TIME'] = job_record.start_time
+        result_dict['JOBID'] = jobid
         result_dict['S_TIME_UTC'] = job_record.start_time_utc
         result_dict['MESSAGE'] = message
         result_dict['STATUS'] = status

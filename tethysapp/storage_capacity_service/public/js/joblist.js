@@ -1,5 +1,7 @@
  $(document).ready(function () {
-     $('#job-table').DataTable();
+     $('#job-table').DataTable(  {
+        "order": [[ 1, "asc" ]]
+    });
      var chart_options =
      {
         chart: {
