@@ -1,7 +1,5 @@
  $(document).ready(function () {
-     $('#job-table').DataTable(  {
-        "order": [[ 1, "asc" ]]
-    });
+
      var chart_options =
      {
         chart: {
@@ -46,35 +44,6 @@
         });
 
 
- function cancel_delete_job(jobid)
- {
-
-     $.ajax({
-        type: 'GET',
-        url: '/apps/storage-capacity-service/stop/',
-        dataType:'json',
-        data: {
-                'jobid': jobid,
-
-                },
-        success: function (data) {
-
-                if (data.STATUS == "success")
-                {
-                    var removed_row_from_job_table = $('#job-table').DataTable().row('#' + jobid);
-                    removed_row_from_job_table.remove().draw(false);
-                }
-                else
-                {
-                    alert("Failed to cancel/delete this job!");
-                }
-        },
-        error: function (jqXHR, textStatus, errorThrown) {
-            alert("Failed to cancel/delete this job!");
-        }
-    });
- }
-
  function draw(jobid) {
 
     $.ajax({
@@ -86,9 +55,16 @@
                 },
         success: function (data) {
 
-                if (data.status == "success" && data.job_status == "success")
+                if (data.status == "success" )
                 {
-                    chart.series[0].setData(data.job_result.storage_list);
+                    if (data.job_status == "success")
+                    {
+                        chart.series[0].setData(data.job_result.storage_list);
+                    }
+                    else
+                    {
+                        alert(data.job_status);
+                    }
                 }
                 else
                 {

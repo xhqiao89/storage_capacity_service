@@ -118,7 +118,7 @@ function run_sc_service() {
             }
             else
             {
-                window.open("/apps/storage-capacity-service/joblist");
+                window.open("/apps/storage-capacity-service/view_result/?jobid=" + data.jobid);
 
            }
         },

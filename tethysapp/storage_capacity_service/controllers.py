@@ -103,10 +103,10 @@ def run_sc(request):
     # Return inputs and results
     finally:
         result_dict = {}
-        result_dict['JOBID'] = jobid
-        result_dict['S_TIME_UTC'] = job_record.start_time_utc
-        result_dict['MESSAGE'] = message
-        result_dict['STATUS'] = status
+        result_dict['jobid'] = jobid
+        result_dict['start_time_utc'] = job_record.start_time_utc
+        result_dict['msg'] = message
+        result_dict['status'] = status
 
         return JsonResponse(result_dict)
 
@@ -196,9 +196,9 @@ def stop_sc(request):
     # Return inputs and results
     finally:
         result_dict = {}
-        result_dict["STATUS"] = status
-        result_dict["MESSAGE"] = message
-        result_dict["JOBID"] = jobid
+        result_dict["status"] = status
+        result_dict["msg"] = message
+        result_dict["jobid"] = jobid
         return JsonResponse(result_dict)
 
 
@@ -237,35 +237,18 @@ def check_user_has_job(userid, jobid):
 
 # http://127.0.0.1:8000/apps/storage-capacity-service/joblist/
 @login_required()
-def job_list(request):
+def view_result(request):
     joblist = []
     jobresult_dict = {}
     session = SessionMaker()
     user_id = request.user.id
+    if request.GET:
+        jobid = request.GET.get("jobid", None)
 
-    job_rec_array = session.query(JobRecord).filter(JobRecord.userid == user_id)
-    for job_rec in job_rec_array:
-        start_time_utc = job_rec.start_time_utc
-        joblist.append(job_rec)
-        job_result_array = session.query(JobResult).filter(JobResult.jobid == job_rec.jobid)
-        if job_result_array.count() == 0:
-            jobstatus = check_job_status(job_rec.jobid)
-            now_time_utc = datetime.datetime.utcnow()
-            stop_time_utc = now_time_utc
-        else:
-            job_result = job_result_array[0]
-            jobstatus = job_result.result_dict['status']
-            stop_time_utc = job_result.stop_time_utc
-        execution_time = stop_time_utc-start_time_utc
-        jobresult_dict[job_rec.jobid] = {"status": jobstatus, "stop_time_utc": stop_time_utc, "execution_time": execution_time}
-
-    session.commit()
-
-    context = {'joblist': joblist,
-               'jobresult_dict': jobresult_dict
+    context = {'jobid': jobid
                 }
 
-    return render(request, 'storage_capacity_service/joblist.html', context)
+    return render(request, 'storage_capacity_service/view_result.html', context)
 
 def check_job_status(jobid):
     status = "Unknown"
