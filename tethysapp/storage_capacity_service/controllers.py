@@ -162,68 +162,9 @@ def get_sc(request):
         return JsonResponse(jobinfo_dict)
 
 # http://127.0.0.1:8000/apps/storage-capacity-service/stop/?jobid=04771964-90cf-4aa4-8eee-d4a1b4e2cac1
-@login_required()
-def stop_sc(request):
-
-    status = "success"
-    message = "Job has been stopped."
-
-    try:
-        if request.GET:
-            jobid = request.GET.get("jobid", None)
-
-            if check_user_has_job(request.user.id, jobid):
-                # check if result has been saved in DB
-                session = SessionMaker()
-                job_result_array = session.query(JobResult).filter(JobResult.jobid == jobid)
-                if job_result_array.count() == 0:
-                    task_obj = SC.AsyncResult(jobid)
-                    task_obj.revoke(terminate=True)
-                    task_obj.forget()
-
-                else:
-                    session.delete(job_result_array[0])
-                session.delete(session.query(JobRecord).filter(JobRecord.jobid == jobid)[0])
-                session.commit()
-            else:
-                raise Exception("Cannot find this job or this job is invisible to you.")
-        else:
-            raise Exception("Please call this service in a GET request.")
-    except Exception as ex:
-        status = "error"
-        message = ex.message
-
-    # Return inputs and results
-    finally:
-        result_dict = {}
-        result_dict["status"] = status
-        result_dict["msg"] = message
-        result_dict["jobid"] = jobid
-        return JsonResponse(result_dict)
 
 
 # http://127.0.0.1:8000/apps/storage-capacity-service/download/?jobid=ddd&filename=dr_srtm_30_a45b7df0_lake_523_0.GEOJSON
-@login_required()
-def download_output_files(request):
-    try:
-        output_filename = request.GET.get("filename", None)
-        print output_filename
-        jobid = request.GET.get("jobid", None)
-
-        if check_user_has_job(request.user.id, jobid) and jobid in output_filename:
-            output_file_path = os.path.join(OUTPUT_DATA_PATH, output_filename)
-            print output_file_path
-            response = FileResponse(open(output_file_path, 'r'), content_type='text/plain')
-            response['Content-Disposition'] = 'attachment; filename="' + output_filename
-            response['Content-Length'] = os.path.getsize(output_file_path)
-            return response
-        else:
-            raise Exception("Cannot find this job or result file.")
-
-    except Exception as e:
-        response = HttpResponse(status=503)
-        response.content = "<h3>Cannot find this job or result file.</h3>"
-        return response
 
 def check_user_has_job(userid, jobid):
     user_has_job = False
