@@ -103,10 +103,10 @@ def run_sc(request):
     # Return inputs and results
     finally:
         result_dict = {}
-        result_dict['JOBID'] = jobid
-        result_dict['S_TIME_UTC'] = job_record.start_time_utc
-        result_dict['MESSAGE'] = message
-        result_dict['STATUS'] = status
+        result_dict['jobid'] = jobid
+        result_dict['start_time_utc'] = job_record.start_time_utc
+        result_dict['msg'] = message
+        result_dict['status'] = status
 
         return JsonResponse(result_dict)
 
@@ -196,9 +196,9 @@ def stop_sc(request):
     # Return inputs and results
     finally:
         result_dict = {}
-        result_dict["STATUS"] = status
-        result_dict["MESSAGE"] = message
-        result_dict["JOBID"] = jobid
+        result_dict["status"] = status
+        result_dict["msg"] = message
+        result_dict["jobid"] = jobid
         return JsonResponse(result_dict)
 
 

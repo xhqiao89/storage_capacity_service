@@ -59,7 +59,7 @@
                 },
         success: function (data) {
 
-                if (data.STATUS == "success")
+                if (data.status == "success")
                 {
                     var removed_row_from_job_table = $('#job-table').DataTable().row('#' + jobid);
                     removed_row_from_job_table.remove().draw(false);
