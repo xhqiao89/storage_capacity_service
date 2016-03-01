@@ -55,7 +55,7 @@ $(document).ready(function () {
         outlet_y = evt.coordinate[1];
         addClickPoint(evt.coordinate);
         map.getView().setCenter(evt.coordinate);
-        map.getView().setZoom(15);
+        //map.getView().setZoom(16);
 
     });
 
