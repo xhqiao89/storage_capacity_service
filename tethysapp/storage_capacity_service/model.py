@@ -28,7 +28,7 @@ class JobRecord(Base):
     ylat = Column(Float)
     prj = Column(String(32))
     damh = Column(Float)
-    interval = Column(Float)
+    interval = Column(Integer)
     start_time = Column(DateTime, default=datetime.datetime.now)
     start_time_utc = Column(DateTime, default=datetime.datetime.utcnow)
 

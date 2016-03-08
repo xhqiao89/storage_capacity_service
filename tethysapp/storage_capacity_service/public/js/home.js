@@ -1,8 +1,6 @@
 var map, click_point_layer;
 var outlet_x, outlet_y, damh, interval;
 
-var displayStatus = $('#display-status');
-
 $(document).ready(function () {
 
     map = new ol.Map({
@@ -89,14 +87,6 @@ function run_sc_service() {
 
     damh = document.getElementById("damHeight").value;
     interval = document.getElementById("interval").value;
-    //alert(damh);
-    //alert(interval);
-    //alert(outlet_x);
-    //alert(outlet_y);
-
-    displayStatus.removeClass('error');
-    displayStatus.addClass('calculating');
-    displayStatus.html('<em>Calculating...</em>');
 
     $.ajax({
         type: 'GET',
@@ -112,9 +102,7 @@ function run_sc_service() {
         success: function (data) {
 
             if ('error' in data) {
-                displayStatus.removeClass('calculating');
-                displayStatus.addClass('error');
-                displayStatus.html('<em>' + data.error + '</em>');
+                alert("Error");
             }
             else
             {
@@ -124,12 +112,6 @@ function run_sc_service() {
         },
         error: function (jqXHR, textStatus, errorThrown) {
             alert("Error");
-            debugger;
-            $('#hydroshare-proceed').prop('disabled', false);
-            console.log(jqXHR + '\n' + textStatus + '\n' + errorThrown);
-            displayStatus.removeClass('uploading');
-            displayStatus.addClass('error');
-            displayStatus.html('<em>' + errorThrown + '</em>');
         }
     });
 

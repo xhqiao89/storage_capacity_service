@@ -91,7 +91,7 @@ def SC(jobid, xlon, ylat, prj, damh, interval, output_lake=False):
         ylat = float(ylat)
         outlet = (xlon, ylat)
         dam_h = float(damh)
-        elev_interval = float(interval)
+        elev_interval = dam_h/interval
 
         # Set GISBASE environment variable
         os.environ['GISBASE'] = gisbase

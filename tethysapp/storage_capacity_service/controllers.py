@@ -35,7 +35,7 @@ def home(request):
                     initial="50",
                     disabled=False,
                     attributes="")
-    interval = TextInput(display_text='Interval (m):',
+    interval = TextInput(display_text='Interval:',
                 name="interval",
                 initial="10",
                 disabled=False,
