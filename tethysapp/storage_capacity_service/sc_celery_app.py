@@ -13,8 +13,10 @@ from .model import SessionMaker, JobResult
 # app = Celery('tasks', backend='redis://localhost:6379', broker='redis://localhost:6379')
 
 # Apache should have ownership and full permission to access this path
-DEM_FULL_PATH = "/home/drew/dem/dr_srtm_30.tif"
-DEM_NAME = 'dr_srtm_30' # DEM layer name, no extension (no .tif)
+DEM_FULL_PATH = "/home/drew/dem/dr_srtm_30_3857.tif"
+DEM_NAME = 'dr_srtm_30_3857' # DEM layer name, no extension (no .tif)
+DRAINAGE_FULL_PATH = "/home/drew/dem/dr_srtm_30_3857_drain.tif"
+DRAINAGE_NAME = 'dr_srtm_30_3857_drain'
 GISBASE = "/usr/lib/grass70" # full path to GRASS installation
 GRASS7BIN = "grass70" # command to start GRASS from shell
 GISDB = os.path.join(tempfile.gettempdir(), 'grassdata')
@@ -38,6 +40,8 @@ def SC(jobid, xlon, ylat, prj, damh, interval, output_lake=False):
 
     dem_full_path = DEM_FULL_PATH
     dem = DEM_NAME
+    drainage_full_path = DRAINAGE_FULL_PATH
+    drainage = DRAINAGE_NAME
     gisbase = GISBASE
     grass7bin = GRASS7BIN
     gisdb = GISDB
@@ -125,6 +129,13 @@ def SC(jobid, xlon, ylat, prj, damh, interval, output_lake=False):
         if not os.path.exists(dem_in_mapset_path):
             f.write("\n ---------- import DEM file ------------- \n")
             stats = gscript.read_command('r.in.gdal', input=dem_full_path, output=dem)
+
+        #import drainage
+        drainage_mapset_path = location_path = os.path.join(gisdb, location, mapset, "cell", drainage)
+        if not os.path.exists(drainage_mapset_path):
+            f.write("\n ---------- import Drainage file ------------- \n")
+            stats = gscript.read_command('r.in.gdal', input=drainage_full_path, output=drainage)
+
         # List all files in location to check if the DEM file imported successfully
         f.write("\n ---------- raster ------------- \n")
         for rast in gscript.list_strings(type='rast'):
@@ -178,10 +189,7 @@ def SC(jobid, xlon, ylat, prj, damh, interval, output_lake=False):
 
         # Flow accumulation analysis
         f.write("\n ---------- Flow accumulation analysis ------------- \n")
-
-        drainage = "{0}_drain_10k".format(dem)
-        path_to_drainage = os.path.join(gisdb, location, mapset, "cell", drainage)
-        if not os.path.exists(path_to_drainage):
+        if not os.path.exists(drainage_mapset_path):
             stats = gscript.read_command('r.watershed', elevation=dem, threshold='10000', drainage=drainage, flags='s', overwrite=True)
 
         # Delineate watershed
