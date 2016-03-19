@@ -35,7 +35,7 @@ def add2(x, y):
     return rslt
 
 @task
-def SC(jobid, xlon, ylat, prj, damh, interval, output_lake=False):
+def SC(jobid=123, xlon=123, ylat=123, prj='native', damh=10, interval=5, output_lake=False, only_delin=True):
     logger.info("run SC")
 
     dem_full_path = DEM_FULL_PATH
@@ -130,7 +130,7 @@ def SC(jobid, xlon, ylat, prj, damh, interval, output_lake=False):
             f.write("\n ---------- import DEM file ------------- \n")
             stats = gscript.read_command('r.in.gdal', input=dem_full_path, output=dem)
 
-        #import drainage
+        # Check the drainage file, import if not exist
         drainage_mapset_path = location_path = os.path.join(gisdb, location, mapset, "cell", drainage)
         if not os.path.exists(drainage_mapset_path):
             f.write("\n ---------- import Drainage file ------------- \n")
@@ -189,15 +189,40 @@ def SC(jobid, xlon, ylat, prj, damh, interval, output_lake=False):
         cell_area = nsres * ewres
 
         # Flow accumulation analysis
-        f.write("\n ---------- Flow accumulation analysis ------------- \n")
-        if not os.path.exists(drainage_mapset_path):
-            stats = gscript.read_command('r.watershed', elevation=dem, threshold='10000', drainage=drainage, flags='s', overwrite=True)
-
-        # Delineate watershed
-        f.write("\n ---------- Delineate watershed ------------- \n")
+        # f.write("\n ---------- Flow accumulation analysis ------------- \n")
+        # if not os.path.exists(drainage_mapset_path):
+        #     stats = gscript.read_command('r.watershed', elevation=dem, threshold='10000', drainage=drainage, flags='s', overwrite=True)
         basin = "{0}_{1}_basin".format(dem, jobid)
-        temp_files_list.append(basin)
-        stats = gscript.read_command('r.water.outlet', input=drainage, output=basin, coordinates=outlet, overwrite=True)
+
+        if only_delin:
+            # Delineate watershed
+            f.write("\n ---------- Delineate watershed ------------- \n")
+            # basin = "{0}_{1}_basin".format(dem, jobid)
+            temp_files_list.append(basin)
+            stats = gscript.read_command('r.water.outlet', input=drainage, output=basin, coordinates=outlet, overwrite=True)
+
+            # output watershed
+            # r.mapcalc expression="lake_285.7846_all_0 = if( lake_285.7846, 0)" --o
+            f.write("\n -------------- Set all values of raster basin to 0 ----------------- \n")
+            basin_all_0 = "{0}_all_0".format(basin)
+            mapcalc_cmd = '{0} = if({1}, 0)'.format(basin_all_0, basin)
+            gscript.mapcalc(mapcalc_cmd, overwrite=True, quiet=True)
+
+            # covert raster watershed into vector
+            # r.to.vect input='lake_285.7846_all_0@drew' output='lake_285_all_0_vec' type=area --o
+            f.write("\n -------------- convert raster watershed into vector ----------------- \n")
+            basin_all_0_vect = "{0}_all_0_vect".format(basin)
+            f.write("\n -------------- {0} ----------------- \n".format(basin_all_0_vect))
+            stats = gscript.parse_command('r.to.vect', input=basin_all_0, output=basin_all_0_vect, type="area", overwrite=True)
+
+            # output GeoJSON
+            # v.out.ogr -c input='lake_285_alll_0_vec' output='/tmp/lake_285_all_0_vec.geojson' format=GeoJSON type=area --overwrite
+            geojson_f_name = "{0}.GEOJSON".format(basin)
+            basin_GEOJSON = os.path.join(output_data_path, geojson_f_name)
+            stats = gscript.parse_command('v.out.ogr', input=basin_all_0_vect, output=basin_GEOJSON, \
+                                          format="GeoJSON", type="area", overwrite=True, flags="c")
+            return basin_GEOJSON, msg
+
 
         # Cut dem with watershed
         f.write("\n -------------- Cut dem ----------------- \n")
@@ -309,29 +334,34 @@ def SC(jobid, xlon, ylat, prj, damh, interval, output_lake=False):
         return result
     except Exception as e:
 
-        keep_intermediate = True
-        print e.message
-        msg = e.message
-        if f is not None:
-            f.write("\n-------------!!!!!!  ERROR  !!!!!!--------------\n")
-            f.write(e.message)
-            f.close()
-        result['status'] = 'error'
-        result['storage_list'] = None
-        result['lake_output_list'] = None
-        result['msg'] = msg
-        return result
+        if not only_delin:
+            keep_intermediate = True
+            print e.message
+            msg = e.message
+            if f is not None:
+                f.write("\n-------------!!!!!!  ERROR  !!!!!!--------------\n")
+                f.write(e.message)
+                f.close()
+            result['status'] = 'error'
+            result['storage_list'] = None
+            result['lake_output_list'] = None
+            result['msg'] = msg
+            return result
+        else:
+            msg = e.message
+            return None, msg
 
     finally:
 
-        save_result_to_db(jobid, result)
+        if not only_delin:
+            save_result_to_db(jobid, result)
 
-        # Remove all temp files
-        if not keep_intermediate:
-            for f in temp_files_list:
-                f_fullpath = "{0}/{1}/{2}/cell/{3}".format(gisdb, location, mapset, f)
-                if os.path.exists(f_fullpath):
-                    os.remove(f_fullpath)
+            # Remove all temp files
+            if not keep_intermediate:
+                for f in temp_files_list:
+                    f_fullpath = "{0}/{1}/{2}/cell/{3}".format(gisdb, location, mapset, f)
+                    if os.path.exists(f_fullpath):
+                        os.remove(f_fullpath)
 
 def save_result_to_db(jobid, result):
     session = SessionMaker()
