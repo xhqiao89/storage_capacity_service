@@ -1,4 +1,4 @@
-var map, click_point_layer;
+var map, click_point_layer, river_layer;
 var outlet_x, outlet_y, damh, interval;
 
 $(document).ready(function () {
@@ -40,7 +40,18 @@ $(document).ready(function () {
       })
     });
 
+    river_layer = new ol.layer.Tile({
+        source: new ol.source.TileWMS({
+            //url: 'https://geoserver.byu.edu/arcgis/services/sherry/utah_streams1k/MapServer/WMSServer?',
+            url:'https://geoserver.byu.edu/arcgis/services/sherry/dr_streams/MapServer/WMSServer?',
+            params: {'LAYERS': '0'},
+            crossOrigin: 'anonymous'
+        }),
+        keyword: 'nwm'
+    });
+
     map.addLayer(bing_layer);
+    map.addLayer(river_layer);
     map.addLayer(click_point_layer);
 
     var lat = 18.9108;
@@ -52,7 +63,7 @@ $(document).ready(function () {
         outlet_x = evt.coordinate[0];
         outlet_y = evt.coordinate[1];
         addClickPoint(evt.coordinate);
-        map.getView().setCenter(evt.coordinate);
+        //map.getView().setCenter(evt.coordinate);
         //map.getView().setZoom(16);
 
     });

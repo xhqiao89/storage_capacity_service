@@ -3,6 +3,7 @@ import sys
 from datetime import datetime
 import subprocess
 import tempfile
+from tempfile import mkstemp
 
 from celery import Celery
 from celery.decorators import task
@@ -13,12 +14,14 @@ from .model import SessionMaker, JobResult
 # app = Celery('tasks', backend='redis://localhost:6379', broker='redis://localhost:6379')
 
 # Apache should have ownership and full permission to access this path
-DEM_FULL_PATH = "/home/drew/dem/dr_srtm_30_3857.tif"
-DEM_NAME = 'dr_srtm_30_3857' # DEM layer name, no extension (no .tif)
-DRAINAGE_FULL_PATH = "/home/drew/dem/dr_srtm_30_3857_drain.tif"
-DRAINAGE_NAME = 'dr_srtm_30_3857_drain'
-GISBASE = "/usr/lib/grass70" # full path to GRASS installation
-GRASS7BIN = "grass70" # command to start GRASS from shell
+DEM_FULL_PATH = "/home/sherry/dem/dr3857.tif"
+DEM_NAME = 'dr3857' # DEM layer name, no extension (no .tif)
+DRAINAGE_FULL_PATH = "/home/sherry/dem/dr3857_drain.tif"
+DRAINAGE_NAME = 'dr3857_drain'
+STREAMS_FULL_PATH = "/home/sherry/dem/dr3857_streams10k.tif"
+STREAMS_NAME = 'dr3857_streams10k'
+GISBASE = "/usr/lib/grass74" # full path to GRASS installation
+GRASS7BIN = "grass74" # command to start GRASS from shell
 GISDB = os.path.join(tempfile.gettempdir(), 'grassdata')
 LOGS_PATH = os.path.join(tempfile.gettempdir(), 'grassdata', "logs")
 OUTPUT_DATA_PATH = os.path.join(tempfile.gettempdir(), 'grassdata', "output_data")
@@ -42,6 +45,8 @@ def SC(jobid, xlon, ylat, prj, damh, interval, output_lake=False):
     dem = DEM_NAME
     drainage_full_path = DRAINAGE_FULL_PATH
     drainage = DRAINAGE_NAME
+    streams_full_path = STREAMS_FULL_PATH
+    streams = STREAMS_NAME
     gisbase = GISBASE
     grass7bin = GRASS7BIN
     gisdb = GISDB
@@ -136,6 +141,11 @@ def SC(jobid, xlon, ylat, prj, damh, interval, output_lake=False):
             f.write("\n ---------- import Drainage file ------------- \n")
             stats = gscript.read_command('r.in.gdal', input=drainage_full_path, output=drainage)
 
+        # import streams
+        streams_mapset_path = os.path.join(gisdb, location, mapset, "cell", streams)
+        if not os.path.exists(streams_mapset_path):
+            stats = gscript.read_command('r.in.gdal', flags='o', input=streams_full_path, output=streams)
+
 
         # List all files in location to check if the DEM file imported successfully
         f.write("\n ---------- raster ------------- \n")
@@ -191,13 +201,33 @@ def SC(jobid, xlon, ylat, prj, damh, interval, output_lake=False):
         # Flow accumulation analysis
         f.write("\n ---------- Flow accumulation analysis ------------- \n")
         if not os.path.exists(drainage_mapset_path):
+            stats = gscript.parse_command('g.region', raster=dem, flags='p')
             stats = gscript.read_command('r.watershed', elevation=dem, threshold='10000', drainage=drainage, flags='s', overwrite=True)
+
+        # change outlet coordinates to a shape file
+        fd, outlet_txt_path = mkstemp()
+        os.write(fd, "{0} | {1}".format(xlon, ylat))
+        os.close(fd)
+        outlet_vect = "{0}_outletvect_{1}".format(dem, jobid)
+        stats = gscript.read_command('v.in.ascii', input=outlet_txt_path, output=outlet_vect, overwrite=True)
+
+        # Point snap
+        stats = gscript.parse_command('g.region', raster=streams, flags='p')
+        outlet_snapped_vect = "{0}_outletsnap_{1}".format(dem, jobid)
+        stats = gscript.read_command('r.stream.snap', input=outlet_vect, output=outlet_snapped_vect, stream_rast=streams, radius=1000, overwrite=True)
+
+        #read snapped outlet coordinates
+        # v.out.ascii
+        stats = gscript.read_command("v.out.ascii", input=outlet_snapped_vect)
+        xlon_snapped = float(stats.split('|')[0])
+        ylat_snapped = float(stats.split('|')[1])
+        outlet_snapped_coords = (xlon_snapped, ylat_snapped)
 
         # Delineate watershed
         f.write("\n ---------- Delineate watershed ------------- \n")
         basin = "{0}_{1}_basin".format(dem, jobid)
         temp_files_list.append(basin)
-        stats = gscript.read_command('r.water.outlet', input=drainage, output=basin, coordinates=outlet, overwrite=True)
+        stats = gscript.read_command('r.water.outlet', input=drainage, output=basin, coordinates=outlet_snapped_coords, overwrite=True)
 
         # Cut dem with watershed
         f.write("\n -------------- Cut dem ----------------- \n")
@@ -208,7 +238,7 @@ def SC(jobid, xlon, ylat, prj, damh, interval, output_lake=False):
 
         # Read outlet elevation
         f.write("\n ---------- Read outlet elevation ------------- \n")
-        outlet_info = gscript.read_command('r.what', map=dem, coordinates=outlet)
+        outlet_info = gscript.read_command('r.what', map=dem, coordinates=outlet_snapped_coords)
         f.write("\n{0} \n".format(outlet_info))
         outlet_elev = outlet_info.split('||')[1]
         try:
@@ -244,7 +274,7 @@ def SC(jobid, xlon, ylat, prj, damh, interval, output_lake=False):
             f.write("\n-----------Generate lake file ---------- No.{}\n".format(count))
             lake_rast = '{0}_{1}_lake_{2}'.format(dem, jobid, str(int(elev)))
             temp_files_list.append(lake_rast)
-            stats = gscript.read_command('r.lake', elevation=dem_cropped, coordinates=outlet, waterlevel=elev, lake=lake_rast, overwrite=True)
+            stats = gscript.read_command('r.lake', elevation=dem_cropped, coordinates=outlet_snapped_coords, waterlevel=elev, lake=lake_rast, overwrite=True)
 
             #Calculate reservoir volume
             f.write("\n-----------Calculate lake volume --------- No.{}\n".format(count))
@@ -338,3 +368,5 @@ def save_result_to_db(jobid, result):
     job_result = JobResult(jobid, result)
     session.add(job_result)
     session.commit()
+
+
